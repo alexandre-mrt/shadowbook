@@ -1,7 +1,10 @@
 export const NETWORK = "testnet" as const;
 
-export const SHADOWBOOK_PACKAGE_ID = "";
-export const SEAL_POLICY_PACKAGE_ID = "";
+export const SHADOWBOOK_PACKAGE_ID =
+	"0x2d2290ac963edc2618128f9163c7a2ff7b18b011f15adc191475b6594063db64";
+export const SEAL_POLICY_PACKAGE_ID =
+	"0x2d2290ac963edc2618128f9163c7a2ff7b18b011f15adc191475b6594063db64";
+export const ADMIN_CAP_ID = "0xfe7b26df82facafba11bf184f4807e36ca5d343e96b07fb07ea60e0cafcc0afd";
 
 export const DEEPBOOK_PREDICT_PACKAGE_ID =
 	"0xf5ea2b3749c65d6e56507cc35388719aadb28f9cab873696a2f8687f5c785138";
