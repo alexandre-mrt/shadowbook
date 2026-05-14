@@ -7,3 +7,4 @@ build/
 .claude/worktrees/
 move/build/
 *.log
+.vercel
