@@ -1,0 +1,168 @@
+{
+  "hackathon": "Sui Overflow 2026",
+  "deadline": "2026-05-23T23:59:00Z",
+  "must-have": [
+    {
+      "id": "F001",
+      "name": "Move Contracts — Round Management + Escrow + Settlement",
+      "description": "shadowbook.move with Coin<DUSDC> escrow at commit, commit-reveal state machine, parimutuel settlement (resolve_round + claim_payout), cancel_round. All critic fixes applied: address::to_bytes for hash, remove commitment after reveal, round_id in SEAL identity.",
+      "status": "pending",
+      "owner": null,
+      "branch": "feat/F001-move-contracts",
+      "files": [
+        "move/Move.toml",
+        "move/sources/shadowbook.move",
+        "move/sources/seal_policy.move"
+      ],
+      "estimate_hours": 10,
+      "demo_impact": 3,
+      "build_time": 3,
+      "risk": 2
+    },
+    {
+      "id": "F002",
+      "name": "SEAL Time-Lock Encryption Integration",
+      "description": "seal_policy.move (time-lock with round_id + timestamp), frontend SealClient encrypt/decrypt flow, Walrus blob storage for encrypted orders, session key management. LocalStorage backup for order data.",
+      "status": "pending",
+      "owner": null,
+      "branch": "feat/F002-seal-integration",
+      "files": [
+        "src/lib/seal.ts",
+        "src/lib/walrus.ts",
+        "src/lib/crypto.ts",
+        "src/hooks/useSealEncrypt.ts",
+        "src/hooks/useSealDecrypt.ts"
+      ],
+      "estimate_hours": 8,
+      "demo_impact": 3,
+      "build_time": 2,
+      "risk": 2
+    },
+    {
+      "id": "F003",
+      "name": "Trader Frontend — Full Commit-Reveal UI",
+      "description": "Next.js 15 app with dApp-kit-react v2 wallet connection. Pages: home (active rounds), round detail (commit form → reveal button → results). Full flow: connect wallet → commit encrypted order → wait → reveal → claim payout. Dark/distinctive design (no AI slop).",
+      "status": "pending",
+      "owner": null,
+      "branch": "feat/F003-frontend",
+      "files": [
+        "src/app/layout.tsx",
+        "src/app/page.tsx",
+        "src/app/round/[id]/page.tsx",
+        "src/app/globals.css",
+        "src/components/RoundCard.tsx",
+        "src/components/CommitForm.tsx",
+        "src/components/RevealButton.tsx",
+        "src/components/ResultsPanel.tsx",
+        "src/components/Header.tsx",
+        "src/hooks/useRounds.ts",
+        "src/hooks/useRoundDetail.ts",
+        "src/lib/sui-client.ts",
+        "src/lib/constants.ts",
+        "src/providers/SuiProvider.tsx",
+        "package.json",
+        "tsconfig.json",
+        "next.config.ts",
+        "tailwind.config.ts",
+        "biome.json"
+      ],
+      "estimate_hours": 12,
+      "demo_impact": 3,
+      "build_time": 3,
+      "risk": 1
+    }
+  ],
+  "should-have": [
+    {
+      "id": "F004",
+      "name": "DeepBook Predict Direct Integration",
+      "description": "deepbook_integration.move wrapper — after reveal, mint binary positions via PTB on DeepBook Predict testnet. Proves real DeepBook usage for the $70K track.",
+      "status": "pending",
+      "owner": null,
+      "branch": "feat/F004-deepbook",
+      "files": [
+        "move/sources/deepbook_integration.move"
+      ],
+      "estimate_hours": 6,
+      "demo_impact": 3,
+      "build_time": 2,
+      "risk": 3
+    },
+    {
+      "id": "F005",
+      "name": "Admin Panel — Round Creation UI",
+      "description": "Simple admin page to create rounds (oracle, strike, durations). Saves time during demo vs CLI.",
+      "status": "pending",
+      "owner": null,
+      "branch": "feat/F005-admin",
+      "files": [
+        "src/app/admin/page.tsx",
+        "src/components/CreateRoundForm.tsx"
+      ],
+      "estimate_hours": 3,
+      "demo_impact": 2,
+      "build_time": 1,
+      "risk": 1
+    },
+    {
+      "id": "F006",
+      "name": "Historical Rounds Display",
+      "description": "Show past rounds with results, payouts, and participant count.",
+      "status": "pending",
+      "owner": null,
+      "branch": "feat/F006-history",
+      "files": [
+        "src/app/history/page.tsx",
+        "src/components/RoundHistory.tsx"
+      ],
+      "estimate_hours": 3,
+      "demo_impact": 1,
+      "build_time": 1,
+      "risk": 1
+    }
+  ],
+  "could-have": [
+    {
+      "id": "F007",
+      "name": "Multi-Oracle Support",
+      "description": "Support multiple price oracles (BTC, ETH, SOL) per round.",
+      "status": "pending",
+      "owner": null,
+      "branch": null,
+      "files": [],
+      "estimate_hours": 4,
+      "demo_impact": 2,
+      "build_time": 1,
+      "risk": 2
+    },
+    {
+      "id": "F008",
+      "name": "Leaderboard & Stats",
+      "description": "Trader leaderboard, win/loss tracking, volume stats.",
+      "status": "pending",
+      "owner": null,
+      "branch": null,
+      "files": [],
+      "estimate_hours": 4,
+      "demo_impact": 1,
+      "build_time": 1,
+      "risk": 1
+    }
+  ],
+  "parking-lot": [],
+  "wont-have": [
+    {
+      "id": "W001",
+      "name": "Auto-reveal Bot",
+      "description": "Automated service that watches for time-lock expiry and auto-reveals. Too complex for solo hackathon.",
+      "status": "wont-have",
+      "owner": null,
+      "branch": null,
+      "files": [],
+      "estimate_hours": 8,
+      "demo_impact": 1,
+      "build_time": 3,
+      "risk": 3
+    }
+  ]
+}

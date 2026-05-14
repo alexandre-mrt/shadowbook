@@ -1,0 +1,9 @@
+node_modules/
+build/
+.next/
+.env
+.env.local
+.sui/
+.claude/worktrees/
+move/build/
+*.log
