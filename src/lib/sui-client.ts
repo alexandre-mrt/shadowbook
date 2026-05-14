@@ -1,21 +1,7 @@
-// NIGHT-SHIFT-REVIEW: SuiJsonRpcClient is the v2 JSON-RPC client from @mysten/sui
-// No SuiClient export exists — confirmed from source code inspection
-
 import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
-import {
-	NETWORK,
-	SHADOWBOOK_PACKAGE_ID,
-	// TODO: wire up SEAL_POLICY_PACKAGE_ID when deploying
-} from "./constants";
+import { NETWORK, SHADOWBOOK_PACKAGE_ID } from "./constants";
 
 export type RoundStatus = "Open" | "Reveal" | "Execute" | "Settled" | "Cancelled";
-
-export interface Commitment {
-	trader: string;
-	orderHash: string;
-	walrusBlobId: string;
-	timestampMs: number;
-}
 
 export interface RevealedOrder {
 	trader: string;
@@ -34,178 +20,115 @@ export interface Round {
 	revealedOrders: RevealedOrder[];
 	status: RoundStatus;
 	escrowAmount: bigint;
+	actualOutcome: boolean | null;
 }
 
-export interface RoundResult {
-	roundId: string;
-	outcome: "UP" | "DOWN" | null;
-	winners: string[];
-	payouts: Record<string, bigint>;
-	totalUp: bigint;
-	totalDown: bigint;
-}
-
-// Shared client instance
 export const suiClient = new SuiJsonRpcClient({
 	url: getJsonRpcFullnodeUrl(NETWORK),
 	network: NETWORK,
 });
 
-const ROUND_TYPE = `${SHADOWBOOK_PACKAGE_ID}::shadowbook::Round`;
+const STATUS_MAP: Record<number, RoundStatus> = {
+	0: "Open",
+	1: "Reveal",
+	2: "Execute",
+	3: "Settled",
+	4: "Cancelled",
+};
 
-/**
- * Fetch all Round shared objects from the chain.
- * TODO: Package ID is empty until contracts are deployed — returns mock data.
- * @returns Array of Round objects
- */
+function computeLiveStatus(
+	status: number,
+	commitDeadlineMs: number,
+	revealDeadlineMs: number,
+): RoundStatus {
+	const now = Date.now();
+	if (status === 0 && now >= commitDeadlineMs) return "Reveal";
+	if (status <= 1 && now >= revealDeadlineMs) return "Execute";
+	return STATUS_MAP[status] ?? "Open";
+}
+
+// biome-ignore lint: complex json parsing
+function parseRoundFields(objectId: string, fields: any): Round {
+	const commitDeadlineMs = Number(fields.commit_deadline_ms);
+	const revealDeadlineMs = Number(fields.reveal_deadline_ms);
+	const rawStatus = typeof fields.status === "number" ? fields.status : 0;
+
+	const revealedOrders: RevealedOrder[] = (fields.revealed_orders ?? []).map(
+		// biome-ignore lint: json parsing
+		(o: any) => ({
+			trader: String(o.fields?.trader ?? o.trader ?? ""),
+			isUp: Boolean(o.fields?.is_up ?? o.is_up),
+			amount: BigInt(o.fields?.amount ?? o.amount ?? 0),
+		}),
+	);
+
+	return {
+		id: objectId,
+		oracleId: String(fields.oracle_id ?? ""),
+		expiryMs: Number(fields.expiry_ms ?? 0),
+		strike: Number(fields.strike ?? 0),
+		commitDeadlineMs,
+		revealDeadlineMs,
+		commitmentCount: Number(fields.commitments?.fields?.size ?? 0),
+		revealedOrders,
+		status: computeLiveStatus(rawStatus, commitDeadlineMs, revealDeadlineMs),
+		escrowAmount: BigInt(fields.total_escrowed ?? 0),
+		actualOutcome: fields.actual_outcome ?? null,
+	};
+}
+
 export async function fetchRounds(): Promise<Round[]> {
-	// NIGHT-SHIFT-REVIEW: Without a deployed package ID, we cannot query objects by type.
-	// Returning mock data until SHADOWBOOK_PACKAGE_ID is set.
-	if (!SHADOWBOOK_PACKAGE_ID) {
-		return getMockRounds();
-	}
+	if (!SHADOWBOOK_PACKAGE_ID) return [];
 
-	// When deployed, query events of type RoundCreated to find all round IDs
-	// then fetch objects by ID using suiClient.core.getObjects(...)
-	// This pattern avoids the need for an indexer.
-	// See: ARCHITECTURE.md for event types
 	try {
-		// queryEvents is directly on SuiJsonRpcClient (not .core)
 		const events = await suiClient.queryEvents({
 			query: { MoveEventType: `${SHADOWBOOK_PACKAGE_ID}::shadowbook::RoundCreated` },
 			limit: 50,
+			order: "descending",
 		});
 
 		const roundIds = events.data
 			.map((e) => {
-				const parsed = e.parsedJson as { round_id?: string };
+				const parsed = e.parsedJson as Record<string, string>;
 				return parsed?.round_id;
 			})
 			.filter((id): id is string => typeof id === "string");
 
 		if (roundIds.length === 0) return [];
 
-		// getObjects is on .core (JSONRpcCoreClient)
-		const { objects } = await suiClient.core.getObjects({
-			objectIds: roundIds,
-			include: { json: true },
+		const objects = await suiClient.multiGetObjects({
+			ids: roundIds,
+			options: { showContent: true },
 		});
 
 		return objects
-			.filter((obj): obj is Exclude<typeof obj, Error> => !(obj instanceof Error))
-			.map(mapObjectToRound)
-			.filter((r): r is Round => r !== null);
-	} catch {
-		return getMockRounds();
+			.filter((obj) => obj.data?.content?.dataType === "moveObject")
+			.map((obj) => {
+				// biome-ignore lint: json parsing
+				const fields = (obj.data!.content as any).fields;
+				return parseRoundFields(obj.data!.objectId, fields);
+			});
+	} catch (err) {
+		console.error("fetchRounds failed:", err);
+		return [];
 	}
 }
 
-/**
- * Fetch a single Round by object ID.
- * TODO: Returns mock data if package not deployed.
- */
 export async function fetchRoundById(id: string): Promise<Round | null> {
-	if (!SHADOWBOOK_PACKAGE_ID) {
-		return getMockRounds().find((r) => r.id === id) ?? null;
-	}
+	if (!SHADOWBOOK_PACKAGE_ID) return null;
 
 	try {
-		const { object } = await suiClient.core.getObject({
-			objectId: id,
-			include: { json: true },
+		const result = await suiClient.getObject({
+			id,
+			options: { showContent: true },
 		});
 
-		if (!object) return null;
-		if (object.type !== ROUND_TYPE) return null;
+		if (!result.data?.content || result.data.content.dataType !== "moveObject") return null;
 
-		return mapObjectToRound(object);
+		// biome-ignore lint: json parsing
+		const fields = (result.data.content as any).fields;
+		return parseRoundFields(result.data.objectId, fields);
 	} catch {
 		return null;
 	}
-}
-
-function mapObjectToRound(obj: {
-	objectId: string;
-	type: string;
-	json?: Record<string, unknown> | null;
-}): Round | null {
-	const json = obj.json;
-	if (!json) return null;
-
-	return {
-		id: obj.objectId,
-		oracleId: String(json.oracle_id ?? ""),
-		expiryMs: Number(json.expiry_ms ?? 0),
-		strike: Number(json.strike ?? 0),
-		commitDeadlineMs: Number(json.commit_deadline_ms ?? 0),
-		revealDeadlineMs: Number(json.reveal_deadline_ms ?? 0),
-		commitmentCount: Number(json.commitment_count ?? 0),
-		revealedOrders: [],
-		status: parseRoundStatus(json.status),
-		escrowAmount: BigInt(0),
-	};
-}
-
-function parseRoundStatus(raw: unknown): RoundStatus {
-	if (typeof raw === "string") {
-		const map: Record<string, RoundStatus> = {
-			Open: "Open",
-			Reveal: "Reveal",
-			Execute: "Execute",
-			Settled: "Settled",
-			Cancelled: "Cancelled",
-		};
-		return map[raw] ?? "Open";
-	}
-	// Move enums can come as objects: { variant: "Open" }
-	if (typeof raw === "object" && raw !== null && "variant" in raw) {
-		return parseRoundStatus((raw as { variant: unknown }).variant);
-	}
-	return "Open";
-}
-
-// Mock data — structures match Move contract exactly
-function getMockRounds(): Round[] {
-	const now = Date.now();
-	return [
-		{
-			id: "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
-			oracleId: "btc_usd",
-			expiryMs: now + 7 * 24 * 60 * 60 * 1000,
-			strike: 105_000,
-			commitDeadlineMs: now + 15 * 60 * 1000,
-			revealDeadlineMs: now + 20 * 60 * 1000,
-			commitmentCount: 3,
-			revealedOrders: [],
-			status: "Open",
-			escrowAmount: BigInt(45_200_000_000),
-		},
-		{
-			id: "0x2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c",
-			oracleId: "eth_usd",
-			expiryMs: now + 3 * 24 * 60 * 60 * 1000,
-			strike: 3_800,
-			commitDeadlineMs: now - 5 * 60 * 1000,
-			revealDeadlineMs: now + 2 * 60 * 1000 + 15 * 1000,
-			commitmentCount: 7,
-			revealedOrders: [],
-			status: "Reveal",
-			escrowAmount: BigInt(128_000_000_000),
-		},
-		{
-			id: "0x3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
-			oracleId: "sol_usd",
-			expiryMs: now - 2 * 24 * 60 * 60 * 1000,
-			strike: 180,
-			commitDeadlineMs: now - 3 * 60 * 60 * 1000,
-			revealDeadlineMs: now - 2 * 60 * 60 * 1000,
-			commitmentCount: 12,
-			revealedOrders: [
-				{ trader: "0xabc", isUp: true, amount: BigInt(10_000_000_000) },
-				{ trader: "0xdef", isUp: false, amount: BigInt(5_000_000_000) },
-			],
-			status: "Settled",
-			escrowAmount: BigInt(210_000_000_000),
-		},
-	];
 }

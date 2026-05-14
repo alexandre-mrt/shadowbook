@@ -40,6 +40,21 @@ export function Header() {
 			</Link>
 
 			<div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+				<Link
+					href="/admin"
+					style={{
+						fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+						fontSize: "0.65rem",
+						color: "#555",
+						letterSpacing: "0.1em",
+						textDecoration: "none",
+						border: "1px solid #1f1f1f",
+						padding: "0.2rem 0.5rem",
+						borderRadius: "2px",
+					}}
+				>
+					ADMIN
+				</Link>
 				<span
 					style={{
 						fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",

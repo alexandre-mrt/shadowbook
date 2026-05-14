@@ -4,10 +4,18 @@ import { CommitForm } from "@/components/CommitForm";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { RevealButton } from "@/components/RevealButton";
 import { useRoundDetail } from "@/hooks/useRoundDetail";
+import { useSealDecrypt } from "@/hooks/useSealDecrypt";
+import { useSealEncrypt } from "@/hooks/useSealEncrypt";
+import { CLOCK_ID, SHADOWBOOK_PACKAGE_ID } from "@/lib/constants";
+import { suiClient } from "@/lib/sui-client";
+import { CurrentAccountSigner } from "@mysten/dapp-kit-core";
+import { useCurrentAccount, useDAppKit } from "@mysten/dapp-kit-react";
+import { Transaction } from "@mysten/sui/transactions";
 import Link from "next/link";
-import { use } from "react";
+import { use, useCallback, useState } from "react";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+const MIST_PER_SUI = 1_000_000_000n;
 
 function formatDeadline(ms: number): string {
 	return new Date(ms).toLocaleTimeString([], {
@@ -23,12 +31,13 @@ function formatSui(mist: bigint): string {
 }
 
 function oracleLabel(oracleId: string): string {
+	if (oracleId.length > 16) return oracleId.slice(0, 8) + "...";
 	const map: Record<string, string> = {
 		btc_usd: "BTC/USD",
 		eth_usd: "ETH/USD",
 		sol_usd: "SOL/USD",
 	};
-	return map[oracleId] ?? oracleId.slice(0, 8);
+	return map[oracleId] ?? "ORACLE";
 }
 
 function TimeDisplay({
@@ -66,9 +75,121 @@ function TimeDisplay({
 	);
 }
 
+function StatusMessage({ text, color }: { text: string; color: string }) {
+	return (
+		<div
+			style={{
+				fontFamily: MONO,
+				fontSize: "0.75rem",
+				color,
+				padding: "0.75rem",
+				border: `1px solid ${color}33`,
+				borderRadius: "4px",
+				backgroundColor: `${color}08`,
+				marginBottom: "1rem",
+				textAlign: "center",
+			}}
+		>
+			{text}
+		</div>
+	);
+}
+
 export default function RoundDetailPage({ params }: { params: Promise<{ id: string }> }) {
 	const { id } = use(params);
-	const { round, isLoading, timeRemaining } = useRoundDetail(id);
+	const { round, isLoading, timeRemaining, refetch } = useRoundDetail(id);
+	const { encryptAndCommit, isEncrypting, error: encryptError } = useSealEncrypt();
+	const { decryptAndReveal, isDecrypting, error: decryptError } = useSealDecrypt();
+	const account = useCurrentAccount();
+	const dAppKit = useDAppKit();
+	const [txStatus, setTxStatus] = useState<string | null>(null);
+
+	const handleCommit = useCallback(
+		async (params: { isUp: boolean; amount: string }) => {
+			if (!account || !round) return;
+			setTxStatus("Encrypting order with SEAL...");
+
+			try {
+				const amountMist = BigInt(
+					Math.floor(Number.parseFloat(params.amount) * Number(MIST_PER_SUI)),
+				);
+				const signer = new CurrentAccountSigner(dAppKit);
+
+				const { transaction } = await encryptAndCommit(
+					round.id,
+					BigInt(round.commitDeadlineMs),
+					params.isUp,
+					amountMist,
+					account.address,
+				);
+
+				setTxStatus("Signing transaction...");
+				await signer.signAndExecuteTransaction({ transaction });
+				setTxStatus("Order committed!");
+				setTimeout(() => {
+					setTxStatus(null);
+					refetch();
+				}, 2000);
+			} catch (err) {
+				setTxStatus(`Error: ${err instanceof Error ? err.message : "Failed"}`);
+				setTimeout(() => setTxStatus(null), 5000);
+			}
+		},
+		[account, round, dAppKit, encryptAndCommit, refetch],
+	);
+
+	const handleReveal = useCallback(async () => {
+		if (!account || !round) return;
+		setTxStatus("Decrypting order from SEAL...");
+
+		try {
+			const signer = new CurrentAccountSigner(dAppKit);
+
+			const { transaction } = await decryptAndReveal(
+				round.id,
+				account.address,
+				async (message: Uint8Array) => {
+					const result = await signer.signPersonalMessage(message);
+					return { signature: result.signature };
+				},
+			);
+
+			setTxStatus("Signing reveal transaction...");
+			await signer.signAndExecuteTransaction({ transaction });
+			setTxStatus("Order revealed!");
+			setTimeout(() => {
+				setTxStatus(null);
+				refetch();
+			}, 2000);
+		} catch (err) {
+			setTxStatus(`Error: ${err instanceof Error ? err.message : "Failed"}`);
+			setTimeout(() => setTxStatus(null), 5000);
+		}
+	}, [account, round, dAppKit, decryptAndReveal, refetch]);
+
+	const handleClaim = useCallback(async () => {
+		if (!account || !round) return;
+		setTxStatus("Claiming payout...");
+
+		try {
+			const signer = new CurrentAccountSigner(dAppKit);
+			const tx = new Transaction();
+			tx.moveCall({
+				target: `${SHADOWBOOK_PACKAGE_ID}::shadowbook::claim_payout`,
+				arguments: [tx.object(round.id), tx.object(CLOCK_ID)],
+			});
+
+			await signer.signAndExecuteTransaction({ transaction: tx });
+			setTxStatus("Payout claimed!");
+			setTimeout(() => {
+				setTxStatus(null);
+				refetch();
+			}, 2000);
+		} catch (err) {
+			setTxStatus(`Error: ${err instanceof Error ? err.message : "Failed"}`);
+			setTimeout(() => setTxStatus(null), 5000);
+		}
+	}, [account, round, dAppKit, refetch]);
 
 	if (isLoading) {
 		return (
@@ -110,9 +231,12 @@ export default function RoundDetailPage({ params }: { params: Promise<{ id: stri
 		Cancelled: "#FF4444",
 	};
 
+	const userRevealed = round.revealedOrders.find((o) => o.trader === account?.address);
+	const outcomeStr =
+		round.actualOutcome === true ? "UP" : round.actualOutcome === false ? "DOWN" : null;
+
 	return (
 		<div style={{ maxWidth: "40rem", margin: "0 auto" }}>
-			{/* Back + Header */}
 			<div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
 				<Link
 					href="/"
@@ -137,7 +261,6 @@ export default function RoundDetailPage({ params }: { params: Promise<{ id: stri
 				</span>
 			</div>
 
-			{/* Round Info */}
 			<div
 				style={{
 					border: "1px solid #1a1a1a",
@@ -162,7 +285,6 @@ export default function RoundDetailPage({ params }: { params: Promise<{ id: stri
 						{formatSui(round.escrowAmount)} escrowed
 					</span>
 				</div>
-
 				<div
 					style={{
 						display: "flex",
@@ -178,7 +300,6 @@ export default function RoundDetailPage({ params }: { params: Promise<{ id: stri
 				</div>
 			</div>
 
-			{/* Countdown */}
 			{timeRemaining && timeRemaining.totalMs > 0 && (
 				<TimeDisplay
 					label={timeRemaining.label}
@@ -188,58 +309,73 @@ export default function RoundDetailPage({ params }: { params: Promise<{ id: stri
 				/>
 			)}
 
-			{/* Phase-specific UI */}
-			<div
-				style={{
-					border: "1px solid #1a1a1a",
-					borderRadius: "4px",
-					padding: "0 1.25rem",
-					backgroundColor: "#0f0f0f",
-				}}
-			>
-				{round.status === "Open" && (
-					<CommitForm
-						roundId={round.id}
-						onCommit={(params) => {
-							console.log("Commit:", params);
-						}}
-					/>
-				)}
+			{txStatus && (
+				<StatusMessage
+					text={txStatus}
+					color={txStatus.startsWith("Error") ? "#FF4444" : "#00FF41"}
+				/>
+			)}
+			{encryptError && <StatusMessage text={encryptError} color="#FF4444" />}
+			{decryptError && <StatusMessage text={decryptError} color="#FF4444" />}
 
-				{round.status === "Reveal" && (
-					<RevealButton
-						roundId={round.id}
-						onReveal={() => {
-							console.log("Reveal triggered");
-						}}
-					/>
-				)}
+			{!account && (
+				<div
+					style={{
+						fontFamily: MONO,
+						fontSize: "0.8rem",
+						color: "#555",
+						textAlign: "center",
+						padding: "2rem 0",
+						border: "1px dashed #1a1a1a",
+						borderRadius: "4px",
+					}}
+				>
+					Connect wallet to participate
+				</div>
+			)}
 
-				{(round.status === "Settled" || round.status === "Execute") && (
-					<ResultsPanel
-						outcome={round.status === "Settled" ? "UP" : null}
-						revealedOrders={round.revealedOrders}
-						claimable={round.status === "Settled"}
-						onClaim={() => {
-							console.log("Claim payout");
-						}}
-					/>
-				)}
+			{account && (
+				<div
+					style={{
+						border: "1px solid #1a1a1a",
+						borderRadius: "4px",
+						padding: "0 1.25rem",
+						backgroundColor: "#0f0f0f",
+					}}
+				>
+					{round.status === "Open" && (
+						<CommitForm roundId={round.id} onCommit={handleCommit} disabled={isEncrypting} />
+					)}
 
-				{round.status === "Cancelled" && (
-					<div
-						style={{
-							padding: "1.5rem 0",
-							fontFamily: MONO,
-							fontSize: "0.8rem",
-							color: "#FF4444",
-							textAlign: "center",
-						}}
-					>
-						This round was cancelled. Funds have been refunded.
-					</div>
-				)}
-			</div>
+					{round.status === "Reveal" && (
+						<RevealButton roundId={round.id} onReveal={handleReveal} disabled={isDecrypting} />
+					)}
+
+					{(round.status === "Settled" || round.status === "Execute") && (
+						<ResultsPanel
+							outcome={outcomeStr}
+							revealedOrders={round.revealedOrders}
+							userAddress={account.address}
+							claimable={round.status === "Settled" && !!userRevealed}
+							onClaim={handleClaim}
+						/>
+					)}
+
+					{round.status === "Cancelled" && (
+						<div
+							style={{
+								padding: "1.5rem 0",
+								fontFamily: MONO,
+								fontSize: "0.8rem",
+								color: "#FF4444",
+								textAlign: "center",
+							}}
+						>
+							This round was cancelled. Funds have been refunded.
+						</div>
+					)}
+				</div>
+			)}
 		</div>
 	);
 }
