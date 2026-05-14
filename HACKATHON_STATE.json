@@ -1,31 +1,18 @@
 {
-  "phase": "architecture",
-  "hours_elapsed": 3,
-  "hours_total": 108,
-  "scope_pressure_score": 0.28,
-  "active_agents": [],
-  "file_ownership": {
-    "move/": "coder-F001",
-    "src/lib/seal.ts": "coder-F002",
-    "src/lib/walrus.ts": "coder-F002",
-    "src/lib/crypto.ts": "coder-F002",
-    "src/hooks/useSealEncrypt.ts": "coder-F002",
-    "src/hooks/useSealDecrypt.ts": "coder-F002",
-    "src/app/": "coder-F003",
-    "src/components/": "coder-F003",
-    "src/hooks/useRounds.ts": "coder-F003",
-    "src/hooks/useRoundDetail.ts": "coder-F003",
-    "src/lib/sui-client.ts": "coder-F003",
-    "src/lib/constants.ts": "coder-F003",
-    "src/providers/": "coder-F003",
-    "package.json": "coder-F003",
-    "tsconfig.json": "coder-F003",
-    "next.config.ts": "coder-F003",
-    "tailwind.config.ts": "coder-F003",
-    "biome.json": "coder-F003"
-  },
-  "completed_features": [],
-  "blocked_features": [],
-  "gates_passed": ["gate-0"],
-  "last_updated": "2026-05-14T18:00:00Z"
+	"phase": "implementation",
+	"hours_elapsed": 6,
+	"hours_total": 108,
+	"scope_pressure_score": 0.11,
+	"active_agents": [],
+	"file_ownership": {},
+	"completed_features": ["F001", "F002", "F003"],
+	"blocked_features": [],
+	"gates_passed": ["gate-0", "gate-1"],
+	"deployment": {
+		"package_id": "0x2d2290ac963edc2618128f9163c7a2ff7b18b011f15adc191475b6594063db64",
+		"admin_cap": "0xfe7b26df82facafba11bf184f4807e36ca5d343e96b07fb07ea60e0cafcc0afd",
+		"test_round": "0x24ae2cab8ac082ee620165c1f29e5d3bac8dc259f3b33323c80cb36037605cd2",
+		"network": "testnet"
+	},
+	"last_updated": "2026-05-14T19:00:00Z"
 }
